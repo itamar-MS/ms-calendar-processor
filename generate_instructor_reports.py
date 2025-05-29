@@ -4,6 +4,9 @@ from pathlib import Path
 from s3_utils import create_s3_bucket, upload_file_to_s3, get_s3_url, generate_unique_filename
 from hubspot_utils import get_hubspot_client, search_contact_by_email, update_contact_property, save_not_found_contacts
 from dotenv import load_dotenv
+import argparse
+from report_generators import generate_instructor_reports
+from report_handlers import CSVHandler, S3Handler
 
 # Load environment variables
 load_dotenv()
@@ -11,7 +14,6 @@ load_dotenv()
 # Constants from environment variables
 INPUT_FILE = 'output/events_list.csv'
 OUTPUT_DIR = 'output/instructor_reports'
-TARGET_MONTH = '2025-04'  # Format: YYYY-MM
 S3_BUCKET_NAME = os.getenv('S3_BUCKET_NAME')
 AWS_REGION = os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
 HUBSPOT_PROPERTY_NAME = 'monthly_report'
@@ -63,17 +65,17 @@ def format_instructor_report(df):
     
     return pd.concat([report_df, total_row], ignore_index=True)
 
-def generate_instructor_reports(events_df):
+def generate_instructor_reports(events_df, target_month):
     """Generate separate CSV files for each instructor for the target month."""
     # Clean instructor names
     events_df['name'] = events_df['name'].apply(clean_instructor_name)
     
     # Convert start_time to datetime and filter for target month
     events_df['start_time'] = pd.to_datetime(events_df['start_time'], format='ISO8601')
-    target_month_events = events_df[events_df['start_time'].dt.strftime('%Y-%m') == TARGET_MONTH]
+    target_month_events = events_df[events_df['start_time'].dt.strftime('%Y-%m') == target_month]
     
     if target_month_events.empty:
-        print(f"No events found for {TARGET_MONTH}")
+        print(f"No events found for {target_month}")
         return
     
     # Create S3 bucket if it doesn't exist
@@ -91,7 +93,7 @@ def generate_instructor_reports(events_df):
         email = instructor_events['email'].iloc[0] if 'email' in instructor_events.columns else 'no_email'
         
         # Create local filename (without email)
-        local_filename = f"{instructor.replace(' ', '_')}_{TARGET_MONTH}_events.csv"
+        local_filename = f"{instructor.replace(' ', '_')}_{target_month}_events.csv"
         output_path = os.path.join(OUTPUT_DIR, local_filename)
         
         # Sort events by start time
@@ -104,13 +106,13 @@ def generate_instructor_reports(events_df):
         formatted_report.to_csv(output_path, index=False)
         
         # Generate S3 filename with name, date, and UUID
-        s3_filename = generate_unique_filename(instructor, TARGET_MONTH, local_filename)
-        s3_key = f"{TARGET_MONTH}/{s3_filename}"
+        s3_filename = generate_unique_filename(instructor, target_month, local_filename)
+        s3_key = f"{target_month}/{s3_filename}"
         
         # Upload to S3
         if upload_file_to_s3(output_path, S3_BUCKET_NAME, s3_key):
             s3_url = get_s3_url(S3_BUCKET_NAME, s3_key)
-            print(f"\nGenerated report for {instructor} ({email}) for {TARGET_MONTH}")
+            print(f"\nGenerated report for {instructor} ({email}) for {target_month}")
             print(f"Local file: {local_filename}")
             print(f"S3 file: {s3_filename}")
             print(f"Public URL: {s3_url}")
@@ -134,24 +136,34 @@ def generate_instructor_reports(events_df):
     # Save not found contacts to CSV
     save_not_found_contacts(not_found_contacts, OUTPUT_DIR)
 
-def main():
+def main(expanded_df=None, target_month=None):
     """Main function to generate instructor reports."""
-    if not S3_BUCKET_NAME:
-        raise ValueError("S3_BUCKET_NAME environment variable is not set")
-        
-    print(f"Starting instructor report generation for {TARGET_MONTH}...")
-    print(f"Using S3 bucket: {S3_BUCKET_NAME} in region: {AWS_REGION}")
+    # If called directly (not from main.py), get parameters from command line
+    if expanded_df is None or target_month is None:
+        parser = argparse.ArgumentParser(description='Generate instructor reports for a specific month')
+        parser.add_argument('--month', type=str, required=True,
+                          help='Target month for instructor reports (format: YYYY-MM)')
+        args = parser.parse_args()
+        target_month = args.month
+        expanded_df = read_events_data()
     
-    # Create output directory
-    ensure_output_directory()
+    print(f"Starting instructor report generation for {target_month}...")
     
-    # Read events data
-    events_df = read_events_data()
+    # Generate the reports
+    instructor_reports = generate_instructor_reports(expanded_df, target_month)
     
-    # Generate reports
-    generate_instructor_reports(events_df)
+    if not instructor_reports:
+        print("No reports were generated.")
+        return
     
-    print(f"\nReports generated in {OUTPUT_DIR} and uploaded to S3 bucket {S3_BUCKET_NAME}")
+    # Process reports with different handlers
+    handlers = [
+        CSVHandler(),
+        S3Handler()
+    ]
+    
+    for handler in handlers:
+        handler.process_reports(instructor_reports, target_month)
 
 if __name__ == "__main__":
     main() 
