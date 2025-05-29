@@ -1,4 +1,5 @@
 import os
+import tempfile
 from pathlib import Path
 from s3_utils import create_s3_bucket, upload_file_to_s3, get_s3_url, generate_unique_filename
 from hubspot_utils import get_hubspot_client, search_contact_by_email, update_contact_property, save_not_found_contacts
@@ -56,35 +57,32 @@ class S3Handler(BaseHandler):
             s3_filename = generate_unique_filename(instructor, target_month, local_filename)
             s3_key = f"{target_month}/{s3_filename}"
             
-            # Save to temporary file
-            temp_path = Path('temp') / local_filename
-            temp_path.parent.mkdir(exist_ok=True)
-            report.to_csv(temp_path, index=False)
-            
-            # Upload to S3
-            if upload_file_to_s3(temp_path, self.bucket_name, s3_key):
-                s3_url = get_s3_url(self.bucket_name, s3_key)
-                print(f"\nUploaded report for {instructor} ({email}) to S3")
-                print(f"S3 file: {s3_filename}")
-                print(f"Public URL: {s3_url}")
+            # Use tempfile to create a temporary file that will be automatically cleaned up
+            with tempfile.NamedTemporaryFile(suffix='.csv', delete=True) as temp_file:
+                # Save report to temporary file
+                report.to_csv(temp_file.name, index=False)
                 
-                # Update HubSpot
-                contact_id = search_contact_by_email(self.hubspot_client, email)
-                if contact_id:
-                    if update_contact_property(self.hubspot_client, contact_id, self.hubspot_property, s3_url):
-                        print(f"Updated HubSpot contact {contact_id} with S3 URL")
+                # Upload to S3
+                if upload_file_to_s3(temp_file.name, self.bucket_name, s3_key):
+                    s3_url = get_s3_url(self.bucket_name, s3_key)
+                    print(f"\nUploaded report for {instructor} ({email}) to S3")
+                    print(f"S3 file: {s3_filename}")
+                    print(f"Public URL: {s3_url}")
+                    
+                    # Update HubSpot
+                    contact_id = search_contact_by_email(self.hubspot_client, email)
+                    if contact_id:
+                        if update_contact_property(self.hubspot_client, contact_id, self.hubspot_property, s3_url):
+                            print(f"Updated HubSpot contact {contact_id} with S3 URL")
+                        else:
+                            print(f"Failed to update HubSpot contact {contact_id}")
                     else:
-                        print(f"Failed to update HubSpot contact {contact_id}")
-                else:
-                    print(f"Contact not found in HubSpot for email: {email}")
-                    not_found_contacts.append({
-                        'email': email,
-                        'name': instructor,
-                        's3_url': s3_url
-                    })
-            
-            # Clean up temporary file
-            temp_path.unlink()
+                        print(f"Contact not found in HubSpot for email: {email}")
+                        not_found_contacts.append({
+                            'email': email,
+                            'name': instructor,
+                            's3_url': s3_url
+                        })
         
         # Save not found contacts
         if not_found_contacts:
