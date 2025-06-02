@@ -40,6 +40,23 @@ def format_instructor_report(df):
     
     return pd.concat([report_df, total_row], ignore_index=True)
 
+def duplicate_events_for_testing(events_df, source_email, target_email):
+    """Duplicate events from one instructor to another for testing purposes."""
+    # Get source instructor's events
+    source_events = events_df[events_df['email'] == source_email].copy()
+    
+    if source_events.empty:
+        print(f"No events found for source instructor {source_email}")
+        return events_df
+    
+    # Create a copy of the events for the target instructor
+    target_events = source_events.copy()
+    target_events['email'] = target_email
+    target_events['name'] = target_email.split('@')[0]  # Use email prefix as name
+    
+    # Combine original and duplicated events
+    return pd.concat([events_df, target_events], ignore_index=True)
+
 def generate_instructor_reports(events_df, target_month):
     """Generate separate dataframes for each instructor for the target month."""
     # Clean instructor names

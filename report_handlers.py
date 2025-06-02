@@ -4,6 +4,9 @@ from pathlib import Path
 from s3_utils import create_s3_bucket, upload_file_to_s3, get_s3_url, generate_unique_filename
 from hubspot_utils import get_hubspot_client, search_contact_by_email, update_contact_property, save_not_found_contacts
 from dotenv import load_dotenv
+from base44_api import Base44API
+from datetime import datetime
+import pandas as pd
 
 # Load environment variables
 load_dotenv()
@@ -33,7 +36,7 @@ class S3Handler(BaseHandler):
     def __init__(self, bucket_name=None, region=None):
         self.bucket_name = bucket_name or os.getenv('S3_BUCKET_NAME')
         self.region = region or os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
-        self.hubspot_property = 'monthly_report'
+        self.hubspot_property = 'monthly_report___june'
         
         if not self.bucket_name:
             raise ValueError("S3_BUCKET_NAME environment variable is not set")
@@ -86,4 +89,82 @@ class S3Handler(BaseHandler):
         
         # Save not found contacts
         if not_found_contacts:
-            save_not_found_contacts(not_found_contacts, 'output/instructor_reports') 
+            save_not_found_contacts(not_found_contacts, 'output/instructor_reports')
+
+class Base44SyncHandler(BaseHandler):
+    """Handler for syncing reports with Base44."""
+    def __init__(self):
+        self.api = Base44API()
+        
+    def _prepare_base44_record(self, row: pd.Series, instructor_email: str) -> dict:
+        """Convert a report row to a Base44 record format."""
+        # Extract date from Start Time (format: YYYY-MM-DD HH:MM)
+        start_date = pd.to_datetime(row['Start Time']).date()
+        
+        return {
+            "faculty_email": instructor_email,
+            "date": start_date.strftime('%Y-%m-%d'),
+            "month": start_date.strftime('%Y-%m'),
+            "activity_type": "instruction",
+            "hours": float(row['Duration (Hours)']),
+            "description": row['Session Title'],
+            "course_name": ""  # We don't have course name in the report
+        }
+    
+    def _records_match(self, base44_record: dict, report_record: dict) -> bool:
+        """Compare if two records match in relevant fields."""
+        relevant_fields = ['faculty_email', 'date', 'hours', 'description', 'course_name']
+        return all(base44_record[field] == report_record[field] for field in relevant_fields)
+    
+    def process_reports(self, instructor_reports, target_month):
+        """Sync reports with Base44."""
+        # Fetch existing records from Base44
+        existing_records = self.api.fetch_time_entries(month=target_month)
+        
+        # Prepare new records from reports
+        new_records = []
+        for instructor, report_data in instructor_reports.items():
+            email = report_data['email']
+            report = report_data['report']
+            
+            # Skip the total row
+            report = report[report['Instructor Name'] != 'Total']
+            
+            # Convert each row to Base44 format
+            for _, row in report.iterrows():
+                new_records.append(self._prepare_base44_record(row, email))
+        
+        # Find records to delete (in Base44 but not in reports)
+        records_to_delete = []
+        for base44_record in existing_records:
+            should_delete = True
+            for report_record in new_records:
+                if self._records_match(base44_record, report_record):
+                    should_delete = False
+                    break
+            if should_delete:
+                records_to_delete.append(base44_record['id'])
+        
+        # Find records to add (in reports but not in Base44)
+        records_to_add = []
+        for report_record in new_records:
+            should_add = True
+            for base44_record in existing_records:
+                if self._records_match(base44_record, report_record):
+                    should_add = False
+                    break
+            if should_add:
+                records_to_add.append(report_record)
+        
+        # Perform sync operations
+        if records_to_delete:
+            print(f"Deleting {len(records_to_delete)} records from Base44")
+            self.api.bulk_delete_time_entries(records_to_delete)
+        
+        if records_to_add:
+            print(f"Adding {len(records_to_add)} new records to Base44")
+            self.api.bulk_add_time_entries(records_to_add)
+        
+        print(f"Sync completed for {target_month}")
+        print(f"Records deleted: {len(records_to_delete)}")
+        print(f"Records added: {len(records_to_add)}") 

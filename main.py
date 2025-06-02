@@ -2,8 +2,10 @@ import pandas as pd
 from pathlib import Path
 import argparse
 from calendar_utils.parse_raw_events import process_calendar_events
-from report_generators import generate_instructor_reports
-from report_handlers import CSVHandler, S3Handler
+from report_generators import generate_instructor_reports, duplicate_events_for_testing
+from report_handlers import CSVHandler, S3Handler, Base44SyncHandler
+from dotenv import load_dotenv
+from datetime import datetime
 
 def output_events_to_csv(expanded_df, output_dir):
     """Output events to CSV files."""
@@ -28,21 +30,20 @@ def output_events_to_csv(expanded_df, output_dir):
     monthly_stats.to_csv(output_dir / 'monthly_instructor_hours.csv', index=False)
 
 def get_handlers(handler_names):
-    """Get the requested handlers based on their names."""
-    available_handlers = {
-        'csv': CSVHandler,
-        's3': S3Handler
-    }
-    
+    """Get handler instances based on handler names."""
     handlers = []
     for name in handler_names:
-        if name not in available_handlers:
-            raise ValueError(f"Unknown handler: {name}. Available handlers: {', '.join(available_handlers.keys())}")
-        handlers.append(available_handlers[name]())
-    
+        if name == 'csv':
+            handlers.append(CSVHandler())
+        elif name == 's3':
+            handlers.append(S3Handler())
+        elif name == 'base44sync':
+            handlers.append(Base44SyncHandler())
+        else:
+            raise ValueError(f"Unknown handler: {name}")
     return handlers
 
-def main():
+def parse_args():
     parser = argparse.ArgumentParser(
         description='Process calendar events and generate reports',
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -57,15 +58,19 @@ Examples:
   # Generate instructor reports and upload to S3 (with HubSpot updates)
   python main.py --instructor-reports --month 2025-04 --handlers s3
 
-  # Generate instructor reports and use both CSV and S3 handlers
-  python main.py --instructor-reports --month 2025-04 --handlers csv s3
+  # Generate instructor reports and sync with Base44
+  python main.py --instructor-reports --month 2025-04 --handlers base44sync
+
+  # Generate instructor reports and use multiple handlers
+  python main.py --instructor-reports --month 2025-04 --handlers csv s3 base44sync
 
   # Generate both event list and instructor reports with all handlers
-  python main.py --event-list --instructor-reports --month 2025-04 --handlers csv s3
+  python main.py --event-list --instructor-reports --month 2025-04 --handlers csv s3 base44sync
 
 Available Handlers:
-  csv - Save reports to CSV files in the output directory
-  s3  - Upload reports to S3 and update HubSpot contacts
+  csv        - Save reports to CSV files in the output directory
+  s3         - Upload reports to S3 and update HubSpot contacts
+  base44sync - Sync reports with Base44 time tracking system
         """
     )
     
@@ -75,8 +80,10 @@ Available Handlers:
                       help='Generate instructor reports')
     parser.add_argument('--month', type=str,
                       help='Target month for instructor reports (format: YYYY-MM)')
-    parser.add_argument('--handlers', nargs='+', default=['csv', 's3'],
-                      help='List of handlers to use for processing reports (default: csv s3)')
+    parser.add_argument('--handlers', nargs='+', default=['csv'],
+                      help='List of handlers to use for processing reports (default: csv)')
+    parser.add_argument('--duplicate-events', nargs=2, metavar=('SOURCE_EMAIL', 'TARGET_EMAIL'),
+                      help='Duplicate events from source instructor to target instructor')
     
     args = parser.parse_args()
     
@@ -87,22 +94,28 @@ Available Handlers:
     if args.instructor_reports and not args.month:
         parser.error("--month is required when using --instructor-reports")
     
-    # Create output directory if it doesn't exist
-    output_dir = Path('output')
-    output_dir.mkdir(exist_ok=True)
+    return args
+
+def main():
+    load_dotenv()
+    args = parse_args()
     
     # Get processed calendar events
-    expanded_df = process_calendar_events()
+    events_df = process_calendar_events()
+    
+    if args.duplicate_events:
+        source_email, target_email = args.duplicate_events
+        events_df = duplicate_events_for_testing(events_df, source_email, target_email)
     
     if args.event_list:
         print("Generating event list CSV files...")
-        output_events_to_csv(expanded_df, output_dir)
-        print(f"CSV files generated in {output_dir}")
+        output_events_to_csv(events_df, Path('output'))
+        print(f"CSV files generated in output directory")
     
     if args.instructor_reports:
         print(f"Generating instructor reports for {args.month}...")
         # Generate the reports
-        instructor_reports = generate_instructor_reports(expanded_df, args.month)
+        instructor_reports = generate_instructor_reports(events_df, args.month)
         
         if instructor_reports:
             try:
@@ -114,9 +127,9 @@ Available Handlers:
                     print(f"\nProcessing reports with {handler.__class__.__name__}...")
                     handler.process_reports(instructor_reports, args.month)
             except ValueError as e:
-                parser.error(str(e))
+                print(str(e))
         else:
             print("No reports were generated.")
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     main() 

@@ -72,6 +72,64 @@ class Base44API:
             print(f"Error fetching time entries: {e}")
             return []
 
+    def bulk_add_time_entries(self, records: List[Dict]) -> bool:
+        """
+        Bulk add time entries to Base44.
+        
+        Args:
+            records: List of time entry dictionaries to add
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        url = f"{self.base_url}/entities/TimeEntry/bulk"
+        
+        try:
+            response = requests.post(url, headers=self.headers, json=records)
+            response.raise_for_status()
+            print(f"Successfully added {len(records)} time entries")
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Error bulk adding time entries: {e}")
+            return False
+
+    def delete_time_entry(self, record_id: str) -> bool:
+        """
+        Delete a time entry from Base44.
+        
+        Args:
+            record_id: ID of the record to delete
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        url = f"{self.base_url}/entities/TimeEntry/{record_id}"
+        
+        try:
+            response = requests.delete(url, headers=self.headers)
+            response.raise_for_status()
+            print(f"Successfully deleted time entry {record_id}")
+            return True
+        except requests.exceptions.RequestException as e:
+            print(f"Error deleting time entry: {e}")
+            return False
+
+    def bulk_delete_time_entries(self, record_ids: List[str]) -> bool:
+        """
+        Bulk delete time entries from Base44.
+        
+        Args:
+            record_ids: List of record IDs to delete
+            
+        Returns:
+            bool: True if successful, False otherwise
+        """
+        success = True
+        for record_id in record_ids:
+            if not self.delete_time_entry(record_id):
+                success = False
+        return success
+
 def main():
     # Example usage
     api = Base44API()  # Will automatically use API key from environment
