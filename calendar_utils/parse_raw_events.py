@@ -107,11 +107,11 @@ def expand_recurring_event(row):
         'dtstart': event_start,  # Use the event's start time, not DTSTART from RRULE
         'until': until
     }
-    
+
     # Add BYDAY if present
     if byday:
         rrule_args['byweekday'] = byday
-    
+
     # Handle COUNT parameter only if it would end before the until date
     if count:
         # Calculate when the count would end
@@ -125,8 +125,12 @@ def expand_recurring_event(row):
             count_end = count_dates[-1]
             # Use the earlier of count_end and until
             rrule_args['until'] = min(count_end, until)
-    
+
     dates = list(rrule.rrule(**rrule_args))
+    
+    # Manually enforce COUNT if specified
+    if count:
+        dates = dates[:int(count)]
     
     # Handle exclusions
     ex_dates = []

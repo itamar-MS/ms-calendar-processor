@@ -55,6 +55,9 @@ Examples:
   # Generate instructor reports for a specific month and save to CSV only
   python main.py --instructor-reports --month 2025-04 --handlers csv
 
+  # Generate instructor reports for the current month
+  python main.py --instructor-reports --current-month --handlers csv
+
   # Generate instructor reports and upload to S3 (with HubSpot updates)
   python main.py --instructor-reports --month 2025-04 --handlers s3
 
@@ -80,6 +83,8 @@ Available Handlers:
                       help='Generate instructor reports')
     parser.add_argument('--month', type=str,
                       help='Target month for instructor reports (format: YYYY-MM)')
+    parser.add_argument('--current-month', action='store_true',
+                      help='Generate instructor reports for the current month')
     parser.add_argument('--handlers', nargs='+', default=['csv'],
                       help='List of handlers to use for processing reports (default: csv)')
     parser.add_argument('--duplicate-events', nargs=2, metavar=('SOURCE_EMAIL', 'TARGET_EMAIL'),
@@ -91,8 +96,11 @@ Available Handlers:
         parser.print_help()
         return
     
-    if args.instructor_reports and not args.month:
-        parser.error("--month is required when using --instructor-reports")
+    if args.instructor_reports and not args.month and not args.current_month:
+        parser.error("Either --month or --current-month is required when using --instructor-reports")
+    
+    if args.instructor_reports and args.month and args.current_month:
+        parser.error("Cannot specify both --month and --current-month")
     
     return args
 
@@ -102,6 +110,11 @@ def main():
     
     # Get processed calendar events
     events_df = process_calendar_events()
+    
+    # DEBUG: Output raw events DataFrame to CSV for inspection
+    output_dir = Path('output')
+    output_dir.mkdir(exist_ok=True)
+    events_df.to_csv(output_dir / 'raw_events_from_db.csv', index=False)
     
     if args.duplicate_events:
         source_email, target_email = args.duplicate_events
@@ -113,9 +126,15 @@ def main():
         print(f"CSV files generated in output directory")
     
     if args.instructor_reports:
-        print(f"Generating instructor reports for {args.month}...")
+        # Determine the target month
+        if args.current_month:
+            target_month = datetime.now().strftime('%Y-%m')
+        else:
+            target_month = args.month
+            
+        print(f"Generating instructor reports for {target_month}...")
         # Generate the reports
-        instructor_reports = generate_instructor_reports(events_df, args.month)
+        instructor_reports = generate_instructor_reports(events_df, target_month)
         
         if instructor_reports:
             try:
@@ -125,7 +144,7 @@ def main():
                 # Process reports with the selected handlers
                 for handler in handlers:
                     print(f"\nProcessing reports with {handler.__class__.__name__}...")
-                    handler.process_reports(instructor_reports, args.month)
+                    handler.process_reports(instructor_reports, target_month)
             except ValueError as e:
                 print(str(e))
         else:
