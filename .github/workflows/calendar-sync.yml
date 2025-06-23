@@ -42,7 +42,7 @@ jobs:
         AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
         HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
         BASE44_API_KEY: ${{ secrets.BASE44_API_KEY }}
-        DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        CAMPUS_DB_CONN: ${{ secrets.CAMPUS_DB_CONN }}
       run: |
         python main.py --instructor-reports --current-month --handlers base44sync
         
