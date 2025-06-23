@@ -47,7 +47,7 @@ jobs:
         python main.py --instructor-reports --current-month --handlers base44sync
         
     - name: Upload output files as artifacts (for debugging)
-      uses: actions/upload-artifact@v3
+      uses: actions/upload-artifact@v4
       if: always()  # Upload even if the job fails
       with:
         name: calendar-sync-output
