@@ -38,6 +38,20 @@ jobs:
     - name: Install package in editable mode
       run: pip install -e .
 
+    - name: Debug: Print working directory
+      run: pwd
+
+    - name: Debug: List all files
+      run: ls -R
+
+    - name: Debug: Print PYTHONPATH
+      run: echo $PYTHONPATH
+      env:
+        PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
+
+    - name: Debug: List src directory
+      run: ls -l src
+
     - name: Run calendar sync
       env:
         PYTHONPATH: ${{ github.workspace }}:${{ github.workspace }}/src
