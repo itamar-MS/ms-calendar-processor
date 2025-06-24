@@ -56,4 +56,17 @@ jobs:
       with:
         name: calendar-sync-output
         path: output/
-        retention-days: 7 
+        retention-days: 7
+
+    - name: Debug Python path
+      run: |
+        python - << 'PY'
+import sys, pprint, os
+pprint.pprint(sys.path)
+print('\nDirectories:')
+print(os.listdir())
+print('\nSrc data contents:')
+import os, pathlib, json, sys
+for root, dirs, files in os.walk('src/data'):
+    print(root, dirs, files)
+PY 
