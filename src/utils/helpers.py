@@ -14,9 +14,9 @@ METRIC_TYPES = {
 def read_input_files():
     """Read all required input files."""
     events_df = pd.read_csv('output/events_list.csv')
-    event_to_program_df = pd.read_csv('data/event_id_to_program.csv')
-    event_to_course_df = pd.read_csv('data/event_id_to_course_id.csv')
-    course_metadata_df = pd.read_csv('data/course_metadata.csv')
+    event_to_program_df = pd.read_csv('data/raw/event_id_to_program.csv')
+    event_to_course_df = pd.read_csv('data/raw/event_id_to_course_id.csv')
+    course_metadata_df = pd.read_csv('data/raw/course_metadata.csv')
     return events_df, event_to_program_df, event_to_course_df, course_metadata_df
 
 def create_program_mappings(event_to_program_df, event_to_course_df, course_metadata_df):

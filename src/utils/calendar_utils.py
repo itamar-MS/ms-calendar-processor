@@ -1,6 +1,6 @@
 import pandas as pd
 from pathlib import Path
-from calendar_utils.parse_raw_events import process_calendar_events
+from data.parsers.calendar_parser import process_calendar_events
 
 def main():
     # Create output directory if it doesn't exist

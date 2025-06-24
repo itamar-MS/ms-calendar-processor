@@ -1,9 +1,9 @@
 import pandas as pd
 from pathlib import Path
 import argparse
-from calendar_utils.parse_raw_events import process_calendar_events
-from report_generators import generate_instructor_reports, duplicate_events_for_testing
-from report_handlers import CSVHandler, S3Handler, Base44SyncHandler
+from data.parsers.calendar_parser import process_calendar_events
+from reports.generators import generate_instructor_reports, duplicate_events_for_testing
+from reports.handlers import CSVHandler, S3Handler, Base44SyncHandler
 from dotenv import load_dotenv
 from datetime import datetime
 
@@ -50,25 +50,25 @@ def parse_args():
         epilog="""
 Examples:
   # Generate event list CSV files
-  python main.py --event-list
+  python run.py --event-list
 
   # Generate instructor reports for a specific month and save to CSV only
-  python main.py --instructor-reports --month 2025-04 --handlers csv
+  python run.py --instructor-reports --month 2025-04 --handlers csv
 
   # Generate instructor reports for the current month
-  python main.py --instructor-reports --current-month --handlers csv
+  python run.py --instructor-reports --current-month --handlers csv
 
   # Generate instructor reports and upload to S3 (with HubSpot updates)
-  python main.py --instructor-reports --month 2025-04 --handlers s3
+  python run.py --instructor-reports --month 2025-04 --handlers s3
 
   # Generate instructor reports and sync with Base44
-  python main.py --instructor-reports --month 2025-04 --handlers base44sync
+  python run.py --instructor-reports --month 2025-04 --handlers base44sync
 
   # Generate instructor reports and use multiple handlers
-  python main.py --instructor-reports --month 2025-04 --handlers csv s3 base44sync
+  python run.py --instructor-reports --month 2025-04 --handlers csv s3 base44sync
 
   # Generate both event list and instructor reports with all handlers
-  python main.py --event-list --instructor-reports --month 2025-04 --handlers csv s3 base44sync
+  python run.py --event-list --instructor-reports --month 2025-04 --handlers csv s3 base44sync
 
 Available Handlers:
   csv        - Save reports to CSV files in the output directory

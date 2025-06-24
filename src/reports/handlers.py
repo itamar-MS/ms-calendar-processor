@@ -1,10 +1,10 @@
 import os
 import tempfile
 from pathlib import Path
-from s3_utils import create_s3_bucket, upload_file_to_s3, get_s3_url, generate_unique_filename
-from hubspot_utils import get_hubspot_client, search_contact_by_email, update_contact_property, save_not_found_contacts
+from services.s3_service import create_s3_bucket, upload_file_to_s3, get_s3_url, generate_unique_filename
+from services.hubspot_service import get_hubspot_client, search_contact_by_email, update_contact_property, save_not_found_contacts
 from dotenv import load_dotenv
-from base44_api import Base44API
+from services.base44_service import Base44API
 from datetime import datetime
 import pandas as pd
 
