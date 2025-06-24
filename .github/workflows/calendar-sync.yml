@@ -37,6 +37,7 @@ jobs:
       
     - name: Run calendar sync
       env:
+        PYTHONPATH: ${{ github.workspace }}/src
         AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
         AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
         AWS_DEFAULT_REGION: ${{ secrets.AWS_DEFAULT_REGION }}
@@ -44,7 +45,6 @@ jobs:
         BASE44_API_KEY: ${{ secrets.BASE44_API_KEY }}
         CAMPUS_DB_CONN: ${{ secrets.CAMPUS_DB_CONN }}
       run: |
-        cd src
         python -m core.main --instructor-reports --current-month --handlers base44sync
         
     - name: Upload output files as artifacts (for debugging)
