@@ -93,8 +93,9 @@ class S3Handler(BaseHandler):
 
 class Base44SyncHandler(BaseHandler):
     """Handler for syncing reports with Base44."""
-    def __init__(self):
+    def __init__(self, activity_type="instruction"):
         self.api = Base44API()
+        self.activity_type = activity_type
         
     def _prepare_base44_record(self, row: pd.Series, instructor_email: str) -> dict:
         """Convert a report row to a Base44 record format."""
@@ -105,7 +106,7 @@ class Base44SyncHandler(BaseHandler):
             "faculty_email": instructor_email,
             "date": start_date.strftime('%Y-%m-%d'),
             "month": start_date.strftime('%Y-%m'),
-            "activity_type": "instruction",
+            "activity_type": self.activity_type,
             "hours": float(row['Duration (Hours)']),
             "description": row['Session Title'],
             "course_name": ""  # We don't have course name in the report
@@ -119,7 +120,7 @@ class Base44SyncHandler(BaseHandler):
     def process_reports(self, instructor_reports, target_month):
         """Sync reports with Base44."""
         # Fetch existing records from Base44
-        existing_records = self.api.fetch_time_entries(month=target_month)
+        existing_records = self.api.fetch_time_entries(month=target_month, activity_type=self.activity_type)
         
         # Prepare new records from reports
         new_records = []

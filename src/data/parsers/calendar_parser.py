@@ -5,7 +5,7 @@ import pytz
 from dateutil import rrule
 import json
 from pathlib import Path
-from data.database.calendar_queries import get_calendar_events
+from data.database.calendar_queries import get_calendar_events, get_tutoring_sessions
 
 def parse_rrule(rrule_str):
     """Parse RRULE string and return a dict of parameters."""
@@ -278,6 +278,55 @@ def process_calendar_events():
     """Process calendar events and return a DataFrame with the results."""
     # Read the calendar events from the database
     df = get_calendar_events()
+    
+    # Filter out deleted events
+    df = df[df['deleted_at'].isna()]
+    
+    # Process recurring events
+    recurring_events = df[df['recurring_group_id'].notna()].copy()
+    single_events = df[df['recurring_group_id'].isna()].copy()
+    
+    # Expand recurring events
+    expanded_events = []
+    for _, group in recurring_events.groupby('recurring_group_id'):
+        for _, row in group.iterrows():
+            expanded = expand_recurring_event(row)
+            # Convert each event to a clean dictionary
+            for event in expanded:
+                clean_event = {}
+                for key, value in event.items():
+                    if value is None or (isinstance(value, (list, str)) and not value):  # Handle None, empty lists, and empty strings
+                        clean_event[key] = None
+                    else:
+                        clean_event[key] = value
+                expanded_events.append(clean_event)
+    
+    # Add single events
+    for _, row in single_events.iterrows():
+        clean_event = {}
+        for key, value in row.items():
+            if value is None or (isinstance(value, (list, str)) and not value):  # Handle None, empty lists, and empty strings
+                clean_event[key] = None
+            else:
+                clean_event[key] = value
+        expanded_events.append(clean_event)
+    
+    # Convert to DataFrame
+    expanded_df = pd.DataFrame(expanded_events)
+    
+    # Convert timestamps to datetime
+    expanded_df['start_time'] = pd.to_datetime(expanded_df['start_time'])
+    expanded_df['end_time'] = pd.to_datetime(expanded_df['end_time'])
+    
+    # Calculate duration in hours
+    expanded_df['duration_hours'] = (expanded_df['end_time'] - expanded_df['start_time']).dt.total_seconds() / 3600
+    
+    return expanded_df
+
+def process_tutoring_sessions():
+    """Process tutoring sessions and return a DataFrame with the results."""
+    # Read the tutoring sessions from the database
+    df = get_tutoring_sessions()
     
     # Filter out deleted events
     df = df[df['deleted_at'].isna()]

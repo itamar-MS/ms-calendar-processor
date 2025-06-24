@@ -40,6 +40,30 @@ def format_instructor_report(df):
     
     return pd.concat([report_df, total_row], ignore_index=True)
 
+def format_tutor_report(df):
+    """Format the tutor report with proper column names and totals."""
+    # Select and rename columns
+    report_df = df[list(COLUMN_MAPPINGS.keys())].copy()
+    report_df.columns = list(COLUMN_MAPPINGS.values())
+    
+    # Format datetime columns
+    report_df['Start Time'] = pd.to_datetime(report_df['Start Time']).dt.strftime('%Y-%m-%d %H:%M')
+    report_df['End Time'] = pd.to_datetime(report_df['End Time']).dt.strftime('%Y-%m-%d %H:%M')
+    
+    # Format duration to 2 decimal places
+    report_df['Duration (Hours)'] = report_df['Duration (Hours)'].round(2)
+    
+    # Add total row
+    total_row = pd.DataFrame({
+        'Instructor Name': ['Total'],
+        'Session Title': [''],
+        'Start Time': [''],
+        'End Time': [''],
+        'Duration (Hours)': [report_df['Duration (Hours)'].sum()]
+    })
+    
+    return pd.concat([report_df, total_row], ignore_index=True)
+
 def duplicate_events_for_testing(events_df, source_email, target_email):
     """Duplicate events from one instructor to another for testing purposes."""
     # Get source instructor's events
@@ -85,4 +109,34 @@ def generate_instructor_reports(events_df, target_month):
             'email': instructor_events['email'].iloc[0] if 'email' in instructor_events.columns else 'no_email'
         }
     
-    return instructor_reports 
+    return instructor_reports
+
+def generate_tutor_reports(events_df, target_month):
+    """Generate separate dataframes for each tutor for the target month."""
+    # Clean tutor names
+    events_df['name'] = events_df['name'].apply(clean_instructor_name)
+    
+    # Convert start_time to datetime and filter for target month
+    events_df['start_time'] = pd.to_datetime(events_df['start_time'], format='ISO8601')
+    target_month_events = events_df[events_df['start_time'].dt.strftime('%Y-%m') == target_month]
+    
+    if target_month_events.empty:
+        print(f"No tutoring sessions found for {target_month}")
+        return {}
+    
+    # Group events by tutor and generate reports
+    tutor_reports = {}
+    for tutor, tutor_events in target_month_events.groupby('name'):
+        # Sort events by start time
+        tutor_events = tutor_events.sort_values('start_time')
+        
+        # Format the report
+        formatted_report = format_tutor_report(tutor_events)
+        
+        # Store the report with tutor info
+        tutor_reports[tutor] = {
+            'report': formatted_report,
+            'email': tutor_events['email'].iloc[0] if 'email' in tutor_events.columns else 'no_email'
+        }
+    
+    return tutor_reports 
