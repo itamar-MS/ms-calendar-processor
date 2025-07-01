@@ -31,7 +31,7 @@ class Config:
     OUTPUT_DIR = PROJECT_ROOT / 'output'
     
     # HubSpot configuration
-    HUBSPOT_PROPERTY = 'monthly_report___june'
+    HUBSPOT_PROPERTY = 'monthly_report____july'
     
     @classmethod
     def validate(cls):

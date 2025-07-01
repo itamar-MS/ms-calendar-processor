@@ -7,36 +7,37 @@ from dotenv import load_dotenv
 from services.base44_service import Base44API
 from datetime import datetime
 import pandas as pd
+from core.config import Config
 
 # Load environment variables
 load_dotenv()
 
 class BaseHandler:
     """Base class for report handlers."""
-    def process_reports(self, instructor_reports, target_month):
+    def process_reports(self, faculty_reports, target_month):
         """Process the reports. To be implemented by subclasses."""
         raise NotImplementedError
 
 class CSVHandler(BaseHandler):
     """Handler for saving reports to CSV files."""
-    def __init__(self, output_dir='output/instructor_reports'):
+    def __init__(self, output_dir='output/faculty_reports'):
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
     
-    def process_reports(self, instructor_reports, target_month):
-        """Save each instructor's report to a CSV file."""
-        for instructor, report_data in instructor_reports.items():
-            local_filename = f"{instructor.replace(' ', '_')}_{target_month}_events.csv"
+    def process_reports(self, faculty_reports, target_month):
+        """Save each faculty member's report to a CSV file."""
+        for faculty_member, report_data in faculty_reports.items():
+            local_filename = f"{faculty_member.replace(' ', '_')}_{target_month}_faculty_report.csv"
             output_path = self.output_dir / local_filename
             report_data['report'].to_csv(output_path, index=False)
-            print(f"Saved report for {instructor} to {output_path}")
+            print(f"Saved faculty report for {faculty_member} to {output_path}")
 
 class S3Handler(BaseHandler):
     """Handler for uploading reports to S3 and updating HubSpot."""
     def __init__(self, bucket_name=None, region=None):
         self.bucket_name = bucket_name or os.getenv('S3_BUCKET_NAME')
         self.region = region or os.getenv('AWS_DEFAULT_REGION', 'us-east-1')
-        self.hubspot_property = 'monthly_report___june'
+        self.hubspot_property = Config.HUBSPOT_PROPERTY
         
         if not self.bucket_name:
             raise ValueError("S3_BUCKET_NAME environment variable is not set")
@@ -47,17 +48,17 @@ class S3Handler(BaseHandler):
         # Initialize HubSpot client
         self.hubspot_client = get_hubspot_client()
     
-    def process_reports(self, instructor_reports, target_month):
-        """Upload reports to S3 and update HubSpot contacts."""
+    def process_reports(self, faculty_reports, target_month):
+        """Upload faculty reports to S3 and update HubSpot contacts."""
         not_found_contacts = []
         
-        for instructor, report_data in instructor_reports.items():
+        for faculty_member, report_data in faculty_reports.items():
             email = report_data['email']
             report = report_data['report']
             
             # Generate filenames
-            local_filename = f"{instructor.replace(' ', '_')}_{target_month}_events.csv"
-            s3_filename = generate_unique_filename(instructor, target_month, local_filename)
+            local_filename = f"{faculty_member.replace(' ', '_')}_{target_month}_faculty_report.csv"
+            s3_filename = generate_unique_filename(faculty_member, target_month, local_filename)
             s3_key = f"{target_month}/{s3_filename}"
             
             # Use tempfile to create a temporary file that will be automatically cleaned up
@@ -68,7 +69,7 @@ class S3Handler(BaseHandler):
                 # Upload to S3
                 if upload_file_to_s3(temp_file.name, self.bucket_name, s3_key):
                     s3_url = get_s3_url(self.bucket_name, s3_key)
-                    print(f"\nUploaded report for {instructor} ({email}) to S3")
+                    print(f"\nUploaded faculty report for {faculty_member} ({email}) to S3")
                     print(f"S3 file: {s3_filename}")
                     print(f"Public URL: {s3_url}")
                     
@@ -83,13 +84,13 @@ class S3Handler(BaseHandler):
                         print(f"Contact not found in HubSpot for email: {email}")
                         not_found_contacts.append({
                             'email': email,
-                            'name': instructor,
+                            'name': faculty_member,
                             's3_url': s3_url
                         })
         
         # Save not found contacts
         if not_found_contacts:
-            save_not_found_contacts(not_found_contacts, 'output/instructor_reports')
+            save_not_found_contacts(not_found_contacts, 'output/faculty_reports')
 
 class Base44SyncHandler(BaseHandler):
     """Handler for syncing reports with Base44."""
@@ -117,22 +118,30 @@ class Base44SyncHandler(BaseHandler):
         relevant_fields = ['faculty_email', 'date', 'hours', 'description', 'course_name']
         return all(base44_record[field] == report_record[field] for field in relevant_fields)
     
-    def process_reports(self, instructor_reports, target_month):
+    def process_reports(self, faculty_reports, target_month):
         """Sync reports with Base44."""
         # Fetch existing records from Base44
         existing_records = self.api.fetch_time_entries(month=target_month, activity_type=self.activity_type)
         
         # Prepare new records from reports
         new_records = []
-        for instructor, report_data in instructor_reports.items():
+        for faculty_member, report_data in faculty_reports.items():
             email = report_data['email']
             report = report_data['report']
             
             # Skip the total row
-            report = report[report['Instructor Name'] != 'Total']
+            report = report[report['Faculty Name'] != 'Total']
+            
+            # Filter by activity type if the report contains activity type column
+            if 'Activity Type' in report.columns:
+                # Filter to only include rows matching this handler's activity type
+                filtered_report = report[report['Activity Type'] == self.activity_type]
+            else:
+                # If no activity type column, use all rows (backward compatibility)
+                filtered_report = report
             
             # Convert each row to Base44 format
-            for _, row in report.iterrows():
+            for _, row in filtered_report.iterrows():
                 new_records.append(self._prepare_base44_record(row, email))
         
         # Find records to delete (in Base44 but not in reports)
@@ -159,13 +168,13 @@ class Base44SyncHandler(BaseHandler):
         
         # Perform sync operations
         if records_to_delete:
-            print(f"Deleting {len(records_to_delete)} records from Base44")
+            print(f"Deleting {len(records_to_delete)} records from Base44 for {self.activity_type}")
             self.api.bulk_delete_time_entries(records_to_delete)
         
         if records_to_add:
-            print(f"Adding {len(records_to_add)} new records to Base44")
+            print(f"Adding {len(records_to_add)} new records to Base44 for {self.activity_type}")
             self.api.bulk_add_time_entries(records_to_add)
         
-        print(f"Sync completed for {target_month}")
+        print(f"Sync completed for {target_month} - {self.activity_type}")
         print(f"Records deleted: {len(records_to_delete)}")
         print(f"Records added: {len(records_to_add)}") 

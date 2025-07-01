@@ -2,7 +2,7 @@ import pandas as pd
 from pathlib import Path
 import argparse
 from data.parsers.calendar_parser import process_calendar_events, process_tutoring_sessions
-from reports.generators import generate_instructor_reports, generate_tutor_reports, duplicate_events_for_testing
+from reports.generators import generate_faculty_reports, duplicate_events_for_testing
 from reports.handlers import CSVHandler, S3Handler, Base44SyncHandler
 from dotenv import load_dotenv
 from datetime import datetime, date
@@ -32,7 +32,7 @@ def output_events_to_csv(expanded_df, output_dir, activity_type="instructor"):
     filename = f'monthly_{activity_type}_hours.csv'
     monthly_stats.to_csv(output_dir / filename, index=False)
 
-def get_handlers(handler_names, activity_type="instruction"):
+def get_handlers(handler_names, include_instruction=True, include_tutoring=True):
     """Get handler instances based on handler names."""
     handlers = []
     for name in handler_names:
@@ -41,7 +41,11 @@ def get_handlers(handler_names, activity_type="instruction"):
         elif name == 's3':
             handlers.append(S3Handler())
         elif name == 'base44sync':
-            handlers.append(Base44SyncHandler(activity_type=activity_type))
+            # For Base44, we need to create separate handlers for each activity type
+            if include_instruction:
+                handlers.append(Base44SyncHandler(activity_type="instruction"))
+            if include_tutoring:
+                handlers.append(Base44SyncHandler(activity_type="tutoring"))
         else:
             raise ValueError(f"Unknown handler: {name}")
     return handlers
@@ -60,57 +64,51 @@ def generate_month_range(start_month="2025-01"):
     
     return months
 
-def process_reports_for_month(target_month, activity_type, args):
-    """Process reports for a specific month."""
-    print(f"\nProcessing {activity_type} reports for {target_month}...")
+def process_reports_for_month(target_month, args):
+    """Process faculty reports for a specific month."""
+    print(f"\nProcessing faculty reports for {target_month}...")
     
-    if args.instructor_reports:
-        # Load instructor sessions data
+    # Determine which activities to include
+    include_instruction = args.instructor_reports or args.faculty_reports
+    include_tutoring = args.tutor_reports or args.faculty_reports
+    
+    # If neither instructor_reports nor tutor_reports nor faculty_reports is specified, include both (default behavior)
+    if not args.instructor_reports and not args.tutor_reports and not args.faculty_reports:
+        include_instruction = True
+        include_tutoring = True
+    
+    # Load data based on selected activities
+    instructor_events_df = None
+    tutor_events_df = None
+    
+    if include_instruction:
         instructor_events_df = process_calendar_events()
         print("Processing instructor sessions...")
-        
-        # Generate instructor reports
-        instructor_reports = generate_instructor_reports(instructor_events_df, target_month)
-        
-        if instructor_reports:
-            try:
-                # Get the requested handlers
-                handlers = get_handlers(args.handlers, activity_type="instruction")
-                
-                # Process reports with the selected handlers
-                for handler in handlers:
-                    print(f"Processing instructor reports with {handler.__class__.__name__}...")
-                    handler.process_reports(instructor_reports, target_month)
-            except ValueError as e:
-                print(str(e))
-        else:
-            print(f"No instructor reports generated for {target_month}")
     
-    if args.tutor_reports:
-        # Load tutoring sessions data
+    if include_tutoring:
         tutor_events_df = process_tutoring_sessions()
         print("Processing tutoring sessions...")
-        
-        # Generate tutor reports
-        tutor_reports = generate_tutor_reports(tutor_events_df, target_month)
-        
-        if tutor_reports:
-            try:
-                # Get the requested handlers
-                handlers = get_handlers(args.handlers, activity_type="tutoring")
-                
-                # Process reports with the selected handlers
-                for handler in handlers:
-                    print(f"Processing tutor reports with {handler.__class__.__name__}...")
-                    handler.process_reports(tutor_reports, target_month)
-            except ValueError as e:
-                print(str(e))
-        else:
-            print(f"No tutor reports generated for {target_month}")
+    
+    # Generate unified faculty reports
+    faculty_reports = generate_faculty_reports(instructor_events_df, tutor_events_df, target_month)
+    
+    if faculty_reports:
+        try:
+            # Get the requested handlers
+            handlers = get_handlers(args.handlers, include_instruction, include_tutoring)
+            
+            # Process reports with the selected handlers
+            for handler in handlers:
+                print(f"Processing faculty reports with {handler.__class__.__name__}...")
+                handler.process_reports(faculty_reports, target_month)
+        except ValueError as e:
+            print(str(e))
+    else:
+        print(f"No faculty reports generated for {target_month}")
 
 def parse_args():
     parser = argparse.ArgumentParser(
-        description='Process calendar events and generate reports',
+        description='Process calendar events and generate faculty reports',
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
@@ -120,49 +118,48 @@ Examples:
   # Generate event list CSV files for tutoring sessions
   python run.py --event-list --tutoring-sessions
 
-  # Generate instructor reports for a specific month and save to CSV only
+  # Generate faculty reports for instruction only
   python run.py --instructor-reports --month 2025-04 --handlers csv
 
-  # Generate tutor reports for a specific month and save to CSV only
+  # Generate faculty reports for tutoring only
   python run.py --tutor-reports --month 2025-04 --handlers csv
 
-  # Generate instructor reports for the current month
-  python run.py --instructor-reports --current-month --handlers csv
+  # Generate faculty reports for both instruction and tutoring (default)
+  python run.py --faculty-reports --month 2025-04 --handlers csv
 
-  # Generate instructor reports and upload to S3 (with HubSpot updates)
-  python run.py --instructor-reports --month 2025-04 --handlers s3
+  # Generate faculty reports for the current month
+  python run.py --faculty-reports --current-month --handlers csv
 
-  # Generate instructor reports and sync with Base44
-  python run.py --instructor-reports --month 2025-04 --handlers base44sync
+  # Generate faculty reports and upload to S3 (with HubSpot updates)
+  python run.py --faculty-reports --month 2025-04 --handlers s3
 
-  # Generate tutor reports and sync with Base44
-  python run.py --tutor-reports --month 2025-04 --handlers base44sync
+  # Generate faculty reports and sync with Base44
+  python run.py --faculty-reports --month 2025-04 --handlers base44sync
 
-  # Update all months from 2025-01 to current month for both instructor and tutor reports
-  python run.py --update-all-months --instructor-reports --tutor-reports --handlers csv base44sync
+  # Update all months from 2025-01 to current month for faculty reports
+  python run.py --update-all-months --faculty-reports --handlers csv base44sync
 
-  # Update all months for instructor reports only
-  python run.py --update-all-months --instructor-reports --handlers base44sync
+  # Generate faculty reports and use multiple handlers
+  python run.py --faculty-reports --month 2025-04 --handlers csv s3 base44sync
 
-  # Generate instructor reports and use multiple handlers
-  python run.py --instructor-reports --month 2025-04 --handlers csv s3 base44sync
-
-  # Generate both event list and instructor reports with all handlers
-  python run.py --event-list --instructor-reports --month 2025-04 --handlers csv s3 base44sync
+  # Generate both event list and faculty reports with all handlers
+  python run.py --event-list --faculty-reports --month 2025-04 --handlers csv s3 base44sync
 
 Available Handlers:
-  csv        - Save reports to CSV files in the output directory
-  s3         - Upload reports to S3 and update HubSpot contacts
-  base44sync - Sync reports with Base44 time tracking system
+  csv        - Save faculty reports to CSV files in the output directory
+  s3         - Upload faculty reports to S3 and update HubSpot contacts
+  base44sync - Sync faculty reports with Base44 time tracking system
         """
     )
     
     parser.add_argument('--event-list', action='store_true',
                       help='Generate event list CSV files')
     parser.add_argument('--instructor-reports', action='store_true',
-                      help='Generate instructor reports')
+                      help='Generate faculty reports for instruction activities only')
     parser.add_argument('--tutor-reports', action='store_true',
-                      help='Generate tutor reports')
+                      help='Generate faculty reports for tutoring activities only')
+    parser.add_argument('--faculty-reports', action='store_true',
+                      help='Generate unified faculty reports (combining instruction and tutoring)')
     parser.add_argument('--tutoring-sessions', action='store_true',
                       help='Process tutoring sessions instead of instructor sessions')
     parser.add_argument('--month', type=str,
@@ -178,7 +175,7 @@ Available Handlers:
     
     args = parser.parse_args()
     
-    if not args.event_list and not args.instructor_reports and not args.tutor_reports:
+    if not args.event_list and not args.instructor_reports and not args.tutor_reports and not args.faculty_reports:
         parser.print_help()
         return
     
@@ -188,10 +185,10 @@ Available Handlers:
             parser.error("Cannot use --month or --current-month with --update-all-months")
     else:
         # When not using --update-all-months, we need either --month or --current-month for reports
-        if (args.instructor_reports or args.tutor_reports) and not args.month and not args.current_month:
-            parser.error("Either --month or --current-month is required when using --instructor-reports or --tutor-reports")
+        if (args.instructor_reports or args.tutor_reports or args.faculty_reports) and not args.month and not args.current_month:
+            parser.error("Either --month or --current-month is required when using --instructor-reports, --tutor-reports, or --faculty-reports")
         
-        if (args.instructor_reports or args.tutor_reports) and args.month and args.current_month:
+        if (args.instructor_reports or args.tutor_reports or args.faculty_reports) and args.month and args.current_month:
             parser.error("Cannot specify both --month and --current-month")
     
     return args
@@ -207,7 +204,7 @@ def main():
     if args.duplicate_events:
         source_email, target_email = args.duplicate_events
         # For duplicate events, we need to load data first
-        if args.tutoring_sessions or args.tutor_reports:
+        if args.tutoring_sessions or args.faculty_reports:
             events_df = process_tutoring_sessions()
             print("Processing tutoring sessions...")
         else:
@@ -217,7 +214,7 @@ def main():
     
     if args.event_list:
         # Load appropriate data for event list
-        if args.tutoring_sessions or args.tutor_reports:
+        if args.tutoring_sessions or args.faculty_reports:
             activity_type = "tutoring"
             events_df = process_tutoring_sessions()
             print("Processing tutoring sessions...")
@@ -240,18 +237,18 @@ def main():
         print(f"Processing {len(months)} months: {', '.join(months)}")
         
         for target_month in months:
-            process_reports_for_month(target_month, "all", args)
+            process_reports_for_month(target_month, args)
         
         print(f"\nCompleted processing all months from 2025-01 to current month")
     
-    elif args.instructor_reports or args.tutor_reports:
+    elif args.instructor_reports or args.tutor_reports or args.faculty_reports:
         # Determine the target month
         if args.current_month:
             target_month = datetime.now().strftime('%Y-%m')
         else:
             target_month = args.month
             
-        process_reports_for_month(target_month, "all", args)
+        process_reports_for_month(target_month, args)
 
 if __name__ == "__main__":
     main() 

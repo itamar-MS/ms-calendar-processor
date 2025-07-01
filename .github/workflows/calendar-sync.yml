@@ -50,8 +50,9 @@ jobs:
         HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
         BASE44_API_KEY: ${{ secrets.BASE44_API_KEY }}
         CAMPUS_DB_CONN: ${{ secrets.CAMPUS_DB_CONN }}
+        LMS_DB_CONN: ${{ secrets.LMS_DB_CONN }}
       run: |
-        python run.py --instructor-reports --tutor-reports --current-month --handlers base44sync
+        python run.py --faculty-reports --current-month --handlers base44sync
 
   sync-all-months:
     runs-on: ubuntu-latest
@@ -94,8 +95,9 @@ jobs:
         HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
         BASE44_API_KEY: ${{ secrets.BASE44_API_KEY }}
         CAMPUS_DB_CONN: ${{ secrets.CAMPUS_DB_CONN }}
+        LMS_DB_CONN: ${{ secrets.LMS_DB_CONN }}
       run: |
-        python run.py --update-all-months --instructor-reports --tutor-reports --handlers base44sync
+        python run.py --update-all-months --faculty-reports --handlers base44sync
 
   sync-manual:
     runs-on: ubuntu-latest
@@ -138,6 +140,7 @@ jobs:
         HUBSPOT_API_KEY: ${{ secrets.HUBSPOT_API_KEY }}
         BASE44_API_KEY: ${{ secrets.BASE44_API_KEY }}
         CAMPUS_DB_CONN: ${{ secrets.CAMPUS_DB_CONN }}
+        LMS_DB_CONN: ${{ secrets.LMS_DB_CONN }}
       run: |
-        python run.py --update-all-months --instructor-reports --tutor-reports --handlers base44sync
+        python run.py --update-all-months --faculty-reports --handlers base44sync
         
