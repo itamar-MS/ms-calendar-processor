@@ -370,4 +370,13 @@ def process_tutoring_sessions():
     # Calculate duration in hours
     expanded_df['duration_hours'] = (expanded_df['end_time'] - expanded_df['start_time']).dt.total_seconds() / 3600
     
+    # Add 15 minutes prep time to each session
+    expanded_df['duration_hours'] += 0.25
+
+    # Append to title that it includes prep time, if not already present
+    if 'title' in expanded_df.columns:
+        expanded_df['title'] = expanded_df['title'].astype(str).apply(
+            lambda t: t if '(includes 15 min prep)' in t else t + ' (includes 15 min prep)'
+        )
+    
     return expanded_df 
