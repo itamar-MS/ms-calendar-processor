@@ -4,6 +4,7 @@ from datetime import datetime
 import json
 import os
 from dotenv import load_dotenv
+import time
 
 class Base44API:
     def __init__(self, api_key: str = None):
@@ -64,13 +65,23 @@ class Base44API:
         if course_name:
             params['course_name'] = course_name
 
-        try:
-            response = requests.get(url, headers=self.headers, params=params)
-            response.raise_for_status()  # Raise an exception for bad status codes
-            return response.json()
-        except requests.exceptions.RequestException as e:
-            print(f"Error fetching time entries: {e}")
-            return []
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                response = requests.get(url, headers=self.headers, params=params)
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 60))
+                    print(f"Rate limited (429). Waiting {retry_after} seconds before retrying...")
+                    time.sleep(retry_after)
+                    continue
+                response.raise_for_status()  # Raise an exception for bad status codes
+                return response.json()
+            except requests.exceptions.RequestException as e:
+                print(f"Error fetching time entries: {e}")
+                if attempt == max_retries - 1:
+                    return []
+                time.sleep(2 ** attempt)
+        return []
 
     def bulk_add_time_entries(self, records: List[Dict]) -> bool:
         """
@@ -84,14 +95,24 @@ class Base44API:
         """
         url = f"{self.base_url}/entities/TimeEntry/bulk"
         
-        try:
-            response = requests.post(url, headers=self.headers, json=records)
-            response.raise_for_status()
-            print(f"Successfully added {len(records)} time entries")
-            return True
-        except requests.exceptions.RequestException as e:
-            print(f"Error bulk adding time entries: {e}")
-            return False
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                response = requests.post(url, headers=self.headers, json=records)
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 60))
+                    print(f"Rate limited (429). Waiting {retry_after} seconds before retrying...")
+                    time.sleep(retry_after)
+                    continue
+                response.raise_for_status()
+                print(f"Successfully added {len(records)} time entries")
+                return True
+            except requests.exceptions.RequestException as e:
+                print(f"Error bulk adding time entries: {e}")
+                if attempt == max_retries - 1:
+                    return False
+                time.sleep(2 ** attempt)
+        return False
 
     def delete_time_entry(self, record_id: str) -> bool:
         """
@@ -105,14 +126,24 @@ class Base44API:
         """
         url = f"{self.base_url}/entities/TimeEntry/{record_id}"
         
-        try:
-            response = requests.delete(url, headers=self.headers)
-            response.raise_for_status()
-            print(f"Successfully deleted time entry {record_id}")
-            return True
-        except requests.exceptions.RequestException as e:
-            print(f"Error deleting time entry: {e}")
-            return False
+        max_retries = 5
+        for attempt in range(max_retries):
+            try:
+                response = requests.delete(url, headers=self.headers)
+                if response.status_code == 429:
+                    retry_after = int(response.headers.get('Retry-After', 60))
+                    print(f"Rate limited (429). Waiting {retry_after} seconds before retrying...")
+                    time.sleep(retry_after)
+                    continue
+                response.raise_for_status()
+                print(f"Successfully deleted time entry {record_id}")
+                return True
+            except requests.exceptions.RequestException as e:
+                print(f"Error deleting time entry: {e}")
+                if attempt == max_retries - 1:
+                    return False
+                time.sleep(2 ** attempt)
+        return False
 
     def bulk_delete_time_entries(self, record_ids: List[str]) -> bool:
         """
