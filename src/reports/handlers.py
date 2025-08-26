@@ -125,6 +125,7 @@ class Base44SyncHandler(BaseHandler):
         
         # Prepare new records from reports
         new_records = []
+        
         for faculty_member, report_data in faculty_reports.items():
             email = report_data['email']
             report = report_data['report']
@@ -142,18 +143,39 @@ class Base44SyncHandler(BaseHandler):
             
             # Convert each row to Base44 format
             for _, row in filtered_report.iterrows():
-                new_records.append(self._prepare_base44_record(row, email))
+                record = self._prepare_base44_record(row, email)
+                new_records.append(record)
         
-        # Find records to delete (in Base44 but not in reports)
+        # Find records to delete (in Base44 but not in reports + duplicates)
         records_to_delete = []
+        records_to_keep = set()  # Track which unique record combinations we've decided to keep
+        
         for base44_record in existing_records:
-            should_delete = True
+            # Create a unique key for this record based on matching fields
+            record_key = (
+                base44_record.get('faculty_email'),
+                base44_record.get('date'),
+                base44_record.get('hours'),
+                base44_record.get('description'),
+                base44_record.get('course_name')
+            )
+            
+            # Check if this record matches any report record
+            matches_report = False
             for report_record in new_records:
                 if self._records_match(base44_record, report_record):
-                    should_delete = False
+                    matches_report = True
                     break
-            if should_delete:
+            
+            if not matches_report:
+                # Record is in Base44 but not in reports - should be deleted
                 records_to_delete.append(base44_record['id'])
+            elif record_key in records_to_keep:
+                # This is a duplicate of a record we're already keeping - delete it
+                records_to_delete.append(base44_record['id'])
+            else:
+                # This is the first occurrence of this record - keep it
+                records_to_keep.add(record_key)
         
         # Find records to add (in reports but not in Base44)
         records_to_add = []
