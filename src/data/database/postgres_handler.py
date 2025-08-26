@@ -1,11 +1,17 @@
 import pandas as pd
 import sqlalchemy
+import sys
 import os
+from pathlib import Path
 
-# You can set these via environment variables or hardcode for now
+# Add the src directory to the path so we can import from core
+sys.path.append(str(Path(__file__).parent.parent))
+from core.config import Config
+
+# Use the Config class to get connection strings
 CONNECTION_STRINGS = {
-    'CampusDB': os.getenv('CAMPUS_DB_CONN', 'postgresql://user:password@host:port/campusdb'),
-    'LMSDB': os.getenv('LMS_DB_CONN', 'postgresql://user:password@host:port/lmsdb'),
+    'CampusDB': Config.CAMPUS_DB_CONN or 'postgresql://user:password@host:port/campusdb',
+    'LMSDB': Config.LMS_DB_CONN or 'postgresql://user:password@host:port/lmsdb',
 }
 
 class PostgresHandler:
